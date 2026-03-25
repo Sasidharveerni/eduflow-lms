@@ -97,6 +97,72 @@ def verify_password(password: str, hashed: str) -> bool:
     """Verify password"""
     return hash_password(password) == hashed
 
+def ensure_course_content_ids(course):
+    """Ensure embedded modules and lessons have stable ids."""
+    if not course:
+        return course
+
+    modules = course.get("modules", [])
+    changed = False
+
+    for module in modules:
+        if not module.get("id"):
+            module["id"] = str(ObjectId())
+            changed = True
+
+        for lesson in module.get("lessons", []):
+            if not lesson.get("id"):
+                lesson["id"] = str(ObjectId())
+                changed = True
+
+    if changed and course.get("_id"):
+        courses_collection.update_one(
+            {"_id": course["_id"]},
+            {"$set": {"modules": modules}}
+        )
+
+    return course
+
+def find_lesson_location(lesson_id: str):
+    """Locate a lesson inside embedded course modules."""
+    courses = list(courses_collection.find({}))
+
+    for course in courses:
+        course = ensure_course_content_ids(course)
+        modules = course.get("modules", [])
+
+        for module_index, module in enumerate(modules):
+            lessons = module.get("lessons", [])
+            for lesson_index, lesson in enumerate(lessons):
+                if lesson.get("id") == lesson_id:
+                    return course, module_index, lesson_index, lesson
+
+    return None, None, None, None
+
+def recalculate_course_progress(course_id: str):
+    """Recompute progress percentages after lesson structure changes."""
+    course = courses_collection.find_one({"_id": ObjectId(course_id)})
+    if not course:
+        return
+
+    total_lessons = 0
+    for module in course.get("modules", []):
+        total_lessons += len(module.get("lessons", []))
+
+    progress_records = list(progress_collection.find({"courseId": course_id}))
+    for record in progress_records:
+        completed_lessons = record.get("completedLessons", [])
+        progress_percent = (len(completed_lessons) / total_lessons * 100) if total_lessons > 0 else 0
+        progress_collection.update_one(
+            {"_id": record["_id"]},
+            {
+                "$set": {
+                    "progressPercent": progress_percent,
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
+
 # ==================== AUTHENTICATION ENDPOINTS ====================
 
 @app.post("/api/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -160,6 +226,7 @@ async def get_courses(teacherId: Optional[str] = None):
     
     courses = list(courses_collection.find(query))
     for course in courses:
+        course = ensure_course_content_ids(course)
         # Add teacher name
         teacher = users_collection.find_one({"_id": ObjectId(course["teacherId"])})
         course["teacher_name"] = teacher["name"] if teacher else "Unknown"
@@ -181,6 +248,8 @@ async def get_course(course_id: str):
         course = courses_collection.find_one({"_id": ObjectId(course_id)})
         if not course:
             raise HTTPException(status_code=404, detail="Course not found")
+
+        course = ensure_course_content_ids(course)
         
         # Add teacher name
         teacher = users_collection.find_one({"_id": ObjectId(course["teacherId"])})
@@ -226,6 +295,7 @@ async def add_module(course_id: str, module: ModuleAdd):
     """Add a module to a course"""
     try:
         new_module = {
+            "id": str(ObjectId()),
             "title": module.title,
             "lessons": [],
             "created_at": datetime.utcnow()
@@ -297,6 +367,7 @@ async def add_lesson(
     title: str = Form(...),
     youtubeUrl: str = Form(...),
     order: int = Form(...),
+    pdfFileId: Optional[str] = Form(None),
     pdf: Optional[UploadFile] = File(None)
 ):
     """Add a lesson to a module"""
@@ -305,12 +376,14 @@ async def add_lesson(
         course = courses_collection.find_one({"_id": ObjectId(course_id)})
         if not course:
             raise HTTPException(status_code=404, detail="Course not found")
+
+        course = ensure_course_content_ids(course)
         
         if module_index >= len(course["modules"]):
             raise HTTPException(status_code=404, detail="Module not found")
         
         # Handle PDF upload if provided
-        pdf_file_id = None
+        pdf_file_id = pdfFileId
         if pdf:
             pdf_content = await pdf.read()
             pdf_doc = {
@@ -324,6 +397,7 @@ async def add_lesson(
         
         # Create lesson
         new_lesson = {
+            "id": str(ObjectId()),
             "title": title,
             "youtubeUrl": youtubeUrl,
             "order": order,
@@ -344,19 +418,60 @@ async def add_lesson(
 
 @app.put("/api/lessons/{lesson_id}")
 async def update_lesson(lesson_id: str, lesson: LessonUpdate):
-    """Update a lesson (requires finding course and module)"""
-    # This is complex - would need to find which course/module contains this lesson
-    # For MVP, we'll skip this or implement a simpler approach
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    """Update a lesson by locating its parent course and module."""
+    try:
+        course, module_index, lesson_index, existing_lesson = find_lesson_location(lesson_id)
+        if not course:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+
+        update_data = lesson.model_dump(exclude_unset=True) if hasattr(lesson, "model_dump") else lesson.dict(exclude_unset=True)
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No lesson fields provided")
+
+        lessons = course["modules"][module_index]["lessons"]
+        lessons[lesson_index].update(update_data)
+
+        update_path = f"modules.{module_index}.lessons"
+        courses_collection.update_one(
+            {"_id": course["_id"]},
+            {"$set": {update_path: lessons}}
+        )
+
+        recalculate_course_progress(str(course["_id"]))
+        return {"message": "Lesson updated successfully", "lesson": lessons[lesson_index]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/api/lessons/{lesson_id}")
 async def delete_lesson(lesson_id: str):
-    """Delete a lesson"""
-    # For MVP, we'll implement a simpler approach
-    # Find course containing this lesson and remove it
-    courses = courses_collection.find({"modules.lessons": {"$elemMatch": {"_id": lesson_id}}})
-    # This is complex for MVP - implement in phase 2
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    """Delete a lesson by locating its parent course and module."""
+    try:
+        course, module_index, lesson_index, _ = find_lesson_location(lesson_id)
+        if not course:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+
+        lessons = course["modules"][module_index]["lessons"]
+        lessons.pop(lesson_index)
+
+        update_path = f"modules.{module_index}.lessons"
+        courses_collection.update_one(
+            {"_id": course["_id"]},
+            {"$set": {update_path: lessons}}
+        )
+
+        progress_collection.update_many(
+            {"courseId": str(course["_id"])},
+            {"$pull": {"completedLessons": lesson_id}}
+        )
+        recalculate_course_progress(str(course["_id"]))
+
+        return {"message": "Lesson deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 # ==================== PDF ENDPOINTS ====================
 
@@ -410,6 +525,9 @@ async def get_pdf(file_id: str):
 async def update_progress(progress: ProgressUpdate):
     """Update student progress for a lesson"""
     try:
+        if not progress.lessonId:
+            raise HTTPException(status_code=400, detail="Lesson ID is required")
+
         # Check if progress record exists
         progress_record = progress_collection.find_one({
             "studentId": progress.studentId,
@@ -470,32 +588,6 @@ async def update_progress(progress: ProgressUpdate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/progress/{student_id}/{course_id}")
-async def get_progress(student_id: str, course_id: str):
-    """Get student progress for a specific course"""
-    try:
-        progress = progress_collection.find_one({
-            "studentId": student_id,
-            "courseId": course_id
-        })
-        
-        if progress:
-            return {
-                "studentId": progress["studentId"],
-                "courseId": progress["courseId"],
-                "completedLessons": progress["completedLessons"],
-                "progressPercent": progress["progressPercent"]
-            }
-        else:
-            return {
-                "studentId": student_id,
-                "courseId": course_id,
-                "completedLessons": [],
-                "progressPercent": 0
-            }
-    except:
-        raise HTTPException(status_code=400, detail="Invalid parameters")
-
 @app.get("/api/progress/student/{student_id}")
 async def get_all_student_progress(student_id: str):
     """Get all progress records for a student"""
@@ -529,6 +621,34 @@ async def get_course_progress(course_id: str):
     except:
         raise HTTPException(status_code=400, detail="Invalid course ID")
 
+@app.get("/api/progress/{student_id}/{course_id}")
+async def get_progress(student_id: str, course_id: str):
+    """Get student progress for a specific course"""
+    try:
+        progress = progress_collection.find_one({
+            "studentId": student_id,
+            "courseId": course_id
+        })
+        
+        if progress:
+            return {
+                "studentId": progress["studentId"],
+                "courseId": progress["courseId"],
+                "completedLessons": progress["completedLessons"],
+                "progressPercent": progress["progressPercent"],
+                "enrolled": True
+            }
+        else:
+            return {
+                "studentId": student_id,
+                "courseId": course_id,
+                "completedLessons": [],
+                "progressPercent": 0,
+                "enrolled": False
+            }
+    except:
+        raise HTTPException(status_code=400, detail="Invalid parameters")
+
 # ==================== DASHBOARD ENDPOINTS ====================
 
 @app.get("/api/dashboard/student/{student_id}")
@@ -542,12 +662,14 @@ async def get_student_dashboard(student_id: str):
         for progress in progress_records:
             course = courses_collection.find_one({"_id": ObjectId(progress["courseId"])})
             if course:
+                course = ensure_course_content_ids(course)
                 # Get last opened lesson (simplified - would need tracking)
                 last_lesson = None
                 if progress["completedLessons"]:
                     last_lesson = progress["completedLessons"][-1]
                 
                 enrolled_courses.append({
+                    "id": str(course["_id"]),
                     "courseId": str(course["_id"]),
                     "title": course["title"],
                     "description": course["description"],
@@ -569,6 +691,7 @@ async def get_teacher_dashboard(teacher_id: str):
         
         teacher_courses = []
         for course in courses:
+            course = ensure_course_content_ids(course)
             # Get enrollment count
             enrollments = progress_collection.count_documents({"courseId": str(course["_id"])})
             

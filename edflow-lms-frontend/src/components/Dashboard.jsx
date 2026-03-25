@@ -1,43 +1,22 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { BookOpen, GraduationCap, TrendingUp, Award, Clock, ChevronRight, Play, FileText } from 'lucide-react'
+import axios from 'axios'
 import Header from './Header'
 import Footer from './Footer'
 
+const API_BASE_URL = 'http://localhost:8000/api'
+
 function Dashboard() {
+  const user = JSON.parse(localStorage.getItem('user') || 'null')
   const [stats, setStats] = useState({
-    enrolledCourses: 3,
-    completedCourses: 1,
-    totalHours: 24,
-    averageProgress: 65
+    enrolledCourses: 0,
+    completedCourses: 0,
+    totalHours: 0,
+    averageProgress: 0
   })
 
-  const [recentCourses, setRecentCourses] = useState([
-    {
-      id: 1,
-      title: 'Web Development Fundamentals',
-      teacher: 'Dr. Sarah Johnson',
-      progress: 75,
-      lastAccessed: '2 hours ago',
-      thumbnail: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97'
-    },
-    {
-      id: 2,
-      title: 'Python Programming Masterclass',
-      teacher: 'Prof. Michael Chen',
-      progress: 45,
-      lastAccessed: 'Yesterday',
-      thumbnail: 'https://images.unsplash.com/photo-1526379879527-8559ecfcaec0'
-    },
-    {
-      id: 3,
-      title: 'Data Science Essentials',
-      teacher: 'Dr. Emily Rodriguez',
-      progress: 20,
-      lastAccessed: '3 days ago',
-      thumbnail: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71'
-    }
-  ])
+  const [recentCourses, setRecentCourses] = useState([])
 
   const [recommendedCourses, setRecommendedCourses] = useState([
     {
@@ -55,6 +34,51 @@ function Dashboard() {
       duration: '6 hours'
     }
   ])
+  const [loading, setLoading] = useState(true)
+
+  // Fetch student dashboard data
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      if (!user?.id || user.role !== 'student') {
+        setRecentCourses([])
+        setLoading(false)
+        return
+      }
+
+      try {
+        setLoading(true)
+        const response = await axios.get(`${API_BASE_URL}/dashboard/student/${user.id}`)
+        const enrolledCourses = response.data.enrolled_courses || []
+
+        setStats({
+          enrolledCourses: enrolledCourses.length,
+          completedCourses: enrolledCourses.filter((course) => course.progressPercent === 100).length,
+          totalHours: enrolledCourses.reduce((sum, course) => sum + (course.progressPercent * 0.1), 0),
+          averageProgress: Math.round(
+            enrolledCourses.reduce((sum, course) => sum + course.progressPercent, 0) /
+            (enrolledCourses.length || 1)
+          ) || 0
+        })
+        
+        setRecentCourses(
+          enrolledCourses.map((course) => ({
+            id: course.id || course.courseId,
+            title: course.title,
+            teacher: course.teacherName,
+            progress: course.progressPercent,
+            lastAccessed: course.lastOpenedLesson ? 'Resume where you left off' : 'Not started yet'
+          }))
+        )
+      } catch (error) {
+        console.error('Error fetching dashboard:', error)
+        setRecentCourses([])
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchDashboardData()
+  }, [])
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-maroon-50 to-burlywood-50">
@@ -65,7 +89,7 @@ function Dashboard() {
         <div className="bg-gradient-to-r from-maroon-700 to-maroon-800 rounded-2xl p-8 mb-8 text-white">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
             <div>
-              <h1 className="text-3xl font-bold mb-2">Welcome back, John! 👋</h1>
+              <h1 className="text-3xl font-bold mb-2">Welcome back, {user?.name || 'Student'}! 👋</h1>
               <p className="text-burlywood-200">Continue your learning journey. You're doing great!</p>
             </div>
             <div className="mt-4 md:mt-0">
@@ -141,14 +165,15 @@ function Dashboard() {
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {loading && (
+              <div className="col-span-full text-center py-8 text-burlywood-600">
+                Loading your courses...
+              </div>
+            )}
             {recentCourses.map((course) => (
               <Link key={course.id} to={`/course/${course.id}`} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
-                <div className="h-48 overflow-hidden">
-                  <img 
-                    src={course.thumbnail} 
-                    alt={course.title}
-                    className="w-full h-full object-cover"
-                  />
+                <div className="h-48 overflow-hidden bg-gradient-to-r from-maroon-700 to-burlywood-600 flex items-center justify-center">
+                  <BookOpen className="h-14 w-14 text-white/90" />
                 </div>
                 <div className="p-6">
                   <h3 className="text-lg font-semibold text-maroon-900 mb-2">{course.title}</h3>
@@ -156,12 +181,12 @@ function Dashboard() {
                   <div className="mb-3">
                     <div className="flex justify-between text-sm text-maroon-600 mb-1">
                       <span>Progress</span>
-                      <span>{course.progress}%</span>
+                      <span>{course.progress || 0}%</span>
                     </div>
                     <div className="w-full bg-burlywood-200 rounded-full h-2">
                       <div 
                         className="bg-maroon-600 rounded-full h-2 transition-all"
-                        style={{ width: `${course.progress}%` }}
+                        style={{ width: `${course.progress || 0}%` }}
                       ></div>
                     </div>
                   </div>
@@ -176,6 +201,11 @@ function Dashboard() {
               </Link>
             ))}
           </div>
+          {!loading && recentCourses.length === 0 && (
+            <div className="rounded-xl bg-white p-10 text-center text-burlywood-600 shadow-md">
+              You have not enrolled in any courses yet.
+            </div>
+          )}
         </div>
 
         {/* Recommended Courses */}

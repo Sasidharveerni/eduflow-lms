@@ -1,8 +1,11 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { User, Mail, Lock, Eye, EyeOff, UserPlus, GraduationCap, CircuitBoard } from 'lucide-react'
+import axios from 'axios'
 import Header from './Header'
 import Footer from './Footer'
+
+const API_BASE_URL = 'http://localhost:8000/api'
 
 function Register() {
   const navigate = useNavigate()
@@ -16,6 +19,7 @@ function Register() {
     role: 'student'
   })
   const [errors, setErrors] = useState({})
+  const [loading, setLoading] = useState(false)
 
   const handleChange = (e) => {
     setFormData({
@@ -24,25 +28,53 @@ function Register() {
     })
   }
 
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    // Add validation
-    const newErrors = {}
-    if (!formData.name) newErrors.name = 'Name is required'
-    if (!formData.email) newErrors.email = 'Email is required'
-    if (!formData.password) newErrors.password = 'Password is required'
-    if (formData.password.length < 6) newErrors.password = 'Password must be at least 6 characters'
-    if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match'
-    
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors)
-      return
-    }
-    
-    // Handle registration logic here
-    console.log('Registration attempt:', formData)
-    navigate('/dashboard')
+ const handleSubmit = async (e) => {
+  e.preventDefault()
+  
+  // Add validation
+  const newErrors = {}
+  if (!formData.name) newErrors.name = 'Name is required'
+  if (!formData.email) newErrors.email = 'Email is required'
+  if (!formData.password) newErrors.password = 'Password is required'
+  if (formData.password.length < 6) newErrors.password = 'Password must be at least 6 characters'
+  if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match'
+  
+  if (Object.keys(newErrors).length > 0) {
+    setErrors(newErrors)
+    return
   }
+  
+  try {
+    setLoading(true)
+    setErrors({})
+    await axios.post(`${API_BASE_URL}/auth/register`, {
+      name: formData.name,
+      email: formData.email,
+      password: formData.password,
+      role: formData.role
+    })
+    
+    // Auto login after registration
+    const loginResponse = await axios.post(`${API_BASE_URL}/auth/login`, {
+      email: formData.email,
+      password: formData.password
+    })
+    
+    localStorage.setItem('user', JSON.stringify(loginResponse.data))
+    
+    // Redirect based on role
+    if (loginResponse.data.role === 'teacher') {
+      navigate('/teacher/dashboard')
+    } else {
+      navigate('/dashboard')
+    }
+  } catch (error) {
+    console.error('Registration error:', error)
+    setErrors({ submit: error.response?.data?.detail || 'Registration failed. Please try again.' })
+  } finally {
+    setLoading(false)
+  }
+}
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-maroon-50 to-burlywood-50">
@@ -226,11 +258,20 @@ function Register() {
             </div>
 
             <div>
+              {errors.submit && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {errors.submit}
+                </div>
+              )}
+            </div>
+
+            <div>
               <button
                 type="submit"
+                disabled={loading}
                 className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-maroon-600 hover:bg-maroon-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-maroon-500 transition-colors"
               >
-                Create Account
+                {loading ? 'Creating Account...' : 'Create Account'}
               </button>
             </div>
           </form>

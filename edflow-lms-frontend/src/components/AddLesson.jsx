@@ -8,7 +8,7 @@ import axios from 'axios'
 const API_BASE_URL = 'http://localhost:8000/api'
 
 function AddLesson() {
-  const { courseId, moduleIndex } = useParams()
+  const { courseId, moduleIndex, lessonId } = useParams()
   const navigate = useNavigate()
   const [course, setCourse] = useState(null)
   const [formData, setFormData] = useState({
@@ -21,10 +21,11 @@ function AddLesson() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [uploadProgress, setUploadProgress] = useState(0)
+  const isEditMode = Boolean(lessonId)
 
   useEffect(() => {
     fetchCourse()
-  }, [courseId])
+  }, [courseId, lessonId])
 
   const fetchCourse = async () => {
     try {
@@ -33,10 +34,24 @@ function AddLesson() {
       // Set default order based on existing lessons
       const module = response.data.modules?.[parseInt(moduleIndex)]
       if (module && module.lessons) {
-        setFormData(prev => ({
-          ...prev,
-          order: module.lessons.length
-        }))
+        if (isEditMode) {
+          const existingLesson = module.lessons.find((item) => item.id === lessonId)
+          if (!existingLesson) {
+            setError('Lesson not found')
+            return
+          }
+
+          setFormData({
+            title: existingLesson.title || '',
+            youtubeUrl: existingLesson.youtubeUrl || '',
+            order: existingLesson.order ?? 0
+          })
+        } else {
+          setFormData(prev => ({
+            ...prev,
+            order: module.lessons.length
+          }))
+        }
       }
     } catch (err) {
       console.error('Error fetching course:', err)
@@ -109,24 +124,36 @@ function AddLesson() {
         pdfFileId = await handleUploadPDF()
       }
       
-      // Create lesson
-      const lessonFormData = new FormData()
-      lessonFormData.append('title', formData.title)
-      lessonFormData.append('youtubeUrl', formData.youtubeUrl)
-      lessonFormData.append('order', formData.order)
-      if (pdfFileId) {
-        lessonFormData.append('pdfFileId', pdfFileId)
-      }
-      
-      await axios.post(
-        `${API_BASE_URL}/courses/${courseId}/modules/${moduleIndex}/lessons`,
-        lessonFormData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          }
+      if (isEditMode) {
+        const updatePayload = {
+          title: formData.title,
+          youtubeUrl: formData.youtubeUrl,
+          order: Number(formData.order)
         }
-      )
+        if (pdfFileId) {
+          updatePayload.pdfFileId = pdfFileId
+        }
+
+        await axios.put(`${API_BASE_URL}/lessons/${lessonId}`, updatePayload)
+      } else {
+        const lessonFormData = new FormData()
+        lessonFormData.append('title', formData.title)
+        lessonFormData.append('youtubeUrl', formData.youtubeUrl)
+        lessonFormData.append('order', formData.order)
+        if (pdfFileId) {
+          lessonFormData.append('pdfFileId', pdfFileId)
+        }
+        
+        await axios.post(
+          `${API_BASE_URL}/courses/${courseId}/modules/${moduleIndex}/lessons`,
+          lessonFormData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data'
+            }
+          }
+        )
+      }
       
       // Navigate back to modules page
       navigate(`/teacher/course/${courseId}/add-module`)
@@ -175,7 +202,7 @@ function AddLesson() {
               <ArrowLeft className="h-4 w-4 mr-1" />
               Back to Modules
             </button>
-            <h1 className="text-3xl font-bold text-maroon-900 mb-2">Add New Lesson</h1>
+            <h1 className="text-3xl font-bold text-maroon-900 mb-2">{isEditMode ? 'Edit Lesson' : 'Add New Lesson'}</h1>
             <p className="text-burlywood-600">
               Course: <span className="font-semibold">{course?.title}</span> | 
               Module: <span className="font-semibold">{module?.title}</span>
@@ -354,7 +381,7 @@ function AddLesson() {
                   disabled={uploading}
                   className="px-6 py-2 bg-maroon-600 text-white rounded-lg hover:bg-maroon-700 transition-colors disabled:opacity-50 flex items-center"
                 >
-                  {uploading ? 'Adding Lesson...' : 'Add Lesson'}
+                  {uploading ? (isEditMode ? 'Saving Lesson...' : 'Adding Lesson...') : (isEditMode ? 'Save Lesson' : 'Add Lesson')}
                   {!uploading && <ChevronRight className="ml-2 h-4 w-4" />}
                 </button>
               </div>

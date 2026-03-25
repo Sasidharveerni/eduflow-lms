@@ -13,6 +13,7 @@ const API_BASE_URL = 'http://localhost:8000/api'
 function LessonViewer() {
   const { courseId, moduleIndex, lessonIndex } = useParams()
   const navigate = useNavigate()
+  const user = JSON.parse(localStorage.getItem('user') || 'null')
   const [course, setCourse] = useState(null)
   const [lesson, setLesson] = useState(null)
   const [progress, setProgress] = useState(null)
@@ -21,12 +22,15 @@ function LessonViewer() {
   const [markingComplete, setMarkingComplete] = useState(false)
   const [showPDF, setShowPDF] = useState(false)
 
-  // Mock user ID - in real app, get from auth context
-  const studentId = '67e1f8d5c2a4b3c1d5e6f7a8' // Replace with actual user ID
+  const studentId = user?.role === 'student' ? user.id : null
 
   useEffect(() => {
     fetchCourseAndLesson()
-    fetchProgress()
+    if (studentId) {
+      fetchProgress()
+    } else {
+      setProgress(null)
+    }
   }, [courseId, moduleIndex, lessonIndex])
 
   const fetchCourseAndLesson = async () => {
@@ -57,20 +61,24 @@ function LessonViewer() {
       setProgress(response.data)
     } catch (err) {
       console.error('Error fetching progress:', err)
+      setProgress(null)
     }
   }
 
   const handleMarkComplete = async () => {
-    if (!lesson) return
+    if (!lesson || !studentId) {
+      navigate('/login')
+      return
+    }
     
     try {
       setMarkingComplete(true)
-      const isCompleted = progress?.completedLessons?.includes(lesson._id || lesson.id)
+      const isCompleted = progress?.completedLessons?.includes(lesson.id)
       
       await axios.post(`${API_BASE_URL}/progress/update`, {
         studentId,
         courseId,
-        lessonId: lesson._id || lesson.id,
+        lessonId: lesson.id,
         completed: !isCompleted
       })
       
@@ -86,7 +94,7 @@ function LessonViewer() {
 
   const isLessonCompleted = () => {
     if (!progress || !lesson) return false
-    return progress.completedLessons?.includes(lesson._id || lesson.id)
+    return progress.completedLessons?.includes(lesson.id)
   }
 
   const getNextLesson = () => {
@@ -230,7 +238,7 @@ function LessonViewer() {
                     <div className="divide-y divide-burlywood-100">
                       {module.lessons?.map((l, lIdx) => {
                         const isCurrent = parseInt(moduleIndex) === mIdx && parseInt(lessonIndex) === lIdx
-                        const isCompleted = progress?.completedLessons?.includes(l._id || l.id)
+                        const isCompleted = progress?.completedLessons?.includes(l.id)
                         
                         return (
                           <button

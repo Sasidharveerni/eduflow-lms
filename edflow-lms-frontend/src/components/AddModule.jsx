@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Plus, X, FolderOpen, ChevronRight, Trash2 } from 'lucide-react'
+import { Plus, X, FolderOpen, ChevronRight, Trash2, Pencil } from 'lucide-react'
 import Header from './Header'
 import Footer from './Footer'
 import axios from 'axios'
@@ -74,6 +74,22 @@ function AddModule() {
 
   const handleAddLesson = (moduleIndex) => {
     navigate(`/teacher/course/${courseId}/module/${moduleIndex}/add-lesson`)
+  }
+
+  const handleEditLesson = (moduleIndex, lessonId) => {
+    navigate(`/teacher/course/${courseId}/module/${moduleIndex}/lesson/${lessonId}/edit`)
+  }
+
+  const handleDeleteLesson = async (lessonId) => {
+    if (window.confirm('Are you sure you want to delete this lesson?')) {
+      try {
+        await axios.delete(`${API_BASE_URL}/lessons/${lessonId}`)
+        await fetchCourse()
+      } catch (err) {
+        console.error('Error deleting lesson:', err)
+        alert('Failed to delete lesson')
+      }
+    }
   }
 
   if (loading) {
@@ -190,7 +206,7 @@ function AddModule() {
                   {module.lessons && module.lessons.length > 0 ? (
                     <div className="divide-y divide-burlywood-100">
                       {module.lessons.map((lesson, lessonIndex) => (
-                        <div key={lessonIndex} className="px-6 py-3 flex justify-between items-center hover:bg-burlywood-50">
+                        <div key={lesson.id || lessonIndex} className="px-6 py-3 flex justify-between items-center hover:bg-burlywood-50 gap-4">
                           <div>
                             <p className="font-medium text-maroon-900">{lesson.title}</p>
                             <div className="flex space-x-3 text-xs text-burlywood-500 mt-1">
@@ -198,7 +214,23 @@ function AddModule() {
                               {lesson.pdfFileId && <span>📄 PDF</span>}
                             </div>
                           </div>
-                          <span className="text-sm text-burlywood-500">Lesson {lessonIndex + 1}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-burlywood-500">Lesson {lessonIndex + 1}</span>
+                            <button
+                              onClick={() => handleEditLesson(index, lesson.id)}
+                              className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors flex items-center text-sm"
+                            >
+                              <Pencil className="h-4 w-4 mr-1" />
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteLesson(lesson.id)}
+                              className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors flex items-center text-sm"
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Delete
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>

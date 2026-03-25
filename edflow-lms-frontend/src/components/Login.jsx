@@ -1,8 +1,11 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Mail, Lock, LogIn, Eye, EyeOff } from 'lucide-react'
+import axios from 'axios'
 import Header from './Header'
 import Footer from './Footer'
+
+const API_BASE_URL = 'http://localhost:8000/api'
 
 function Login() {
   const navigate = useNavigate()
@@ -12,6 +15,7 @@ function Login() {
     password: ''
   })
   const [errors, setErrors] = useState({})
+  const [loading, setLoading] = useState(false)
 
   const handleChange = (e) => {
     setFormData({
@@ -35,7 +39,8 @@ function Login() {
   
   try {
     setLoading(true)
-    const response = await axios.post("http://localhost:8000/api/auth/login", {
+    setErrors({})
+    const response = await axios.post(`${API_BASE_URL}/auth/login`, {
       email: formData.email,
       password: formData.password
     })
@@ -164,11 +169,20 @@ function Login() {
             </div>
 
             <div>
+              {errors.submit && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {errors.submit}
+                </div>
+              )}
+            </div>
+
+            <div>
               <button
                 type="submit"
+                disabled={loading}
                 className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-maroon-600 hover:bg-maroon-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-maroon-500 transition-colors"
               >
-                Sign In
+                {loading ? 'Signing In...' : 'Sign In'}
               </button>
             </div>
           </form>

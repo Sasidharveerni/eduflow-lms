@@ -28,6 +28,7 @@ function App() {
           <Route path="/teacher/create-course" element={<CreateCourse />} />
           <Route path="/teacher/course/:courseId/add-module" element={<AddModule />} />
           <Route path="/teacher/course/:courseId/module/:moduleIndex/add-lesson" element={<AddLesson />} />
+          <Route path="/teacher/course/:courseId/module/:moduleIndex/lesson/:lessonId/edit" element={<AddLesson />} />
         </Routes>
       </BrowserRouter>
     </>

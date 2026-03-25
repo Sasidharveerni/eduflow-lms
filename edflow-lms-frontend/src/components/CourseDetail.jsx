@@ -13,18 +13,22 @@ const API_BASE_URL = 'http://localhost:8000/api'
 function CourseDetail() {
   const { courseId } = useParams()
   const navigate = useNavigate()
+  const user = JSON.parse(localStorage.getItem('user') || 'null')
   const [course, setCourse] = useState(null)
   const [progress, setProgress] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [enrolling, setEnrolling] = useState(false)
 
-  // Mock user ID - in real app, get from auth context
-  const studentId = '67e1f8d5c2a4b3c1d5e6f7a8' // Replace with actual user ID
+  const studentId = user?.role === 'student' ? user.id : null
 
   useEffect(() => {
     fetchCourseDetails()
-    fetchProgress()
+    if (studentId) {
+      fetchProgress()
+    } else {
+      setProgress(null)
+    }
   }, [courseId])
 
   const fetchCourseDetails = async () => {
@@ -45,10 +49,16 @@ function CourseDetail() {
       setProgress(response.data)
     } catch (err) {
       console.error('Error fetching progress:', err)
+      setProgress(null)
     }
   }
 
   const handleEnroll = async () => {
+    if (!studentId) {
+      navigate('/login')
+      return
+    }
+
     try {
       setEnrolling(true)
       await axios.post(`${API_BASE_URL}/enroll?student_id=${studentId}&course_id=${courseId}`)
@@ -63,7 +73,7 @@ function CourseDetail() {
     }
   }
 
-  const isEnrolled = progress !== null
+  const isEnrolled = progress?.enrolled === true
 
   const calculateTotalLessons = () => {
     if (!course) return 0
@@ -193,7 +203,7 @@ function CourseDetail() {
                   </div>
                   <div className="divide-y divide-burlywood-100">
                     {module.lessons && module.lessons.map((lesson, lessonIndex) => {
-                      const isCompleted = progress?.completedLessons?.includes(lesson._id || lesson.id)
+                      const isCompleted = progress?.completedLessons?.includes(lesson.id)
                       
                       return (
                         <Link

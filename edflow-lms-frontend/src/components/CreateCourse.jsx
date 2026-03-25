@@ -9,15 +9,13 @@ const API_BASE_URL = 'http://localhost:8000/api'
 
 function CreateCourse() {
   const navigate = useNavigate()
+  const user = JSON.parse(localStorage.getItem('user') || 'null')
   const [formData, setFormData] = useState({
     title: '',
     description: ''
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-
-  // Mock teacher ID - in real app, get from auth context
-  const teacherId = '67e1f8d5c2a4b3c1d5e6f7a9' // Replace with actual teacher ID
 
   const handleChange = (e) => {
     setFormData({
@@ -28,6 +26,11 @@ function CreateCourse() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+
+    if (!user?.id || user.role !== 'teacher') {
+      setError('Please sign in as a teacher to create a course.')
+      return
+    }
     
     // Validate form
     if (!formData.title.trim()) {
@@ -45,7 +48,7 @@ function CreateCourse() {
       
       const response = await axios.post(`${API_BASE_URL}/courses`, {
         ...formData,
-        teacherId
+        teacherId: user.id
       })
       
       const courseId = response.data.id
