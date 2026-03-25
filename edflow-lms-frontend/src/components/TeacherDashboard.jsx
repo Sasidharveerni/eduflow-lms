@@ -9,7 +9,7 @@ import axios from 'axios'
 import Header from './Header'
 import Footer from './Footer'
 
-const API_BASE_URL = 'http://localhost:8000/api'
+const API_BASE_URL = 'https://eduflow-lms.onrender.com/api/api'
 
 function TeacherDashboard() {
   const navigate = useNavigate()
