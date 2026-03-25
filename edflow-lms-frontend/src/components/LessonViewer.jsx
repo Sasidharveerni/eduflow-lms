@@ -8,7 +8,7 @@ import Header from './Header'
 import Footer from './Footer'
 import axios from 'axios'
 
-const API_BASE_URL = 'https://eduflow-lms.onrender.com/api/api'
+const API_BASE_URL = 'https://eduflow-lms.onrender.com/api'
 
 function LessonViewer() {
   const { courseId, moduleIndex, lessonIndex } = useParams()

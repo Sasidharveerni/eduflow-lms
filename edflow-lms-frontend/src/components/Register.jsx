@@ -5,7 +5,7 @@ import axios from 'axios'
 import Header from './Header'
 import Footer from './Footer'
 
-const API_BASE_URL = 'https://eduflow-lms.onrender.com/api/api'
+const API_BASE_URL = 'https://eduflow-lms.onrender.com/api'
 
 function Register() {
   const navigate = useNavigate()
